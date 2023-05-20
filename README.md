@@ -1,5 +1,5 @@
 An implementation of the PPO algorithm written in Python using Pytorch. 
-The actor and critic networks are a simple MLP with one hidden layer of size 64. The actor network is trained by observations (angle, angular velocity) from gym environment.
+The actor and critic networks are a simple MLP with one hidden layer of size 64. The environment is fully observable; i.e. obs = [cos(angle), sin(angle), angular velocity].
 
 https://github.com/Ezgii/PPO-on-pendulum/assets/4748948/357aa43d-b6ad-4810-b855-b0a725aaed5a
 

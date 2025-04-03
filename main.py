@@ -35,10 +35,10 @@ WARNING_EMOJI = "\u26A0\uFE0F"
 # Set plot parameters.
 import matplotlib
 font = {'family' : 'serif',
-        'serif' : 'Computer Modern Roman',
+#        'serif' : 'Computer Modern Roman',
         'size'   : 16}
 matplotlib.rc('font', **font)
-matplotlib.rcParams['text.usetex'] = True
+#matplotlib.rcParams['text.usetex'] = True
 matplotlib.rcParams["figure.figsize"] = [3*3.54, 1.5*3.54]
 
 # Set the seed.

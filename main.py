@@ -45,19 +45,21 @@ np.random.seed(0)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Set up argument parser for PPO hyperparameters.
+# Set up argument parser
 parser = argparse.ArgumentParser(description='PPO Training on Pendulum Environment')
-parser.add_argument('--clipping_on', action='store_true', default=True,
+parser.add_argument('--clipping_on', action='store_true',
                     help='Enable clipping in PPO')
-parser.add_argument('--advantage_on', action='store_true', default=True,
+parser.add_argument('--advantage_on', action='store_true',
                     help='Enable advantage estimation in PPO')
 parser.add_argument('--mode', type=str, choices=['train', 'test'], default='train',
                     help='Select mode: train or test')
+
+# Hyperparameters
 parser.add_argument('--num_timesteps', type=int, default=200,
                     help='Number of timesteps per trajectory')
 parser.add_argument('--num_trajectories', type=int, default=10,
                     help='Number of trajectories to collect')
-parser.add_argument('--num_iterations', type=int, default=400,
+parser.add_argument('--num_iterations', type=int, default=250,
                     help='Number of training iterations')
 parser.add_argument('--epochs', type=int, default=100,
                     help='Number of epochs per iteration')
@@ -73,19 +75,37 @@ parser.add_argument('--lambda_', type=float, default=0.95,
                     help='GAE parameter')
 parser.add_argument('--std', type=float, default=0.1,
                     help='Standard deviation for action sampling')
-
+# For experiments with spectral normalization.
 # Specific to the loss of plasticity paper.
-parser.add_argument('--do_loss_of_plasticity', action='store_true', default=True,
+parser.add_argument('--do_loss_of_plasticity', action='store_true',
                     help='Do loss of plasticity')
 
-# For experiments with spectral normalization.
-parser.add_argument('--use_spectral_norm', action='store_true', default=False,
+parser.add_argument('--use_spectral_norm', action='store_true',
                     help='Use spectral normalization')
 
 args = parser.parse_args()
 # Save the arguments.
 with open(ABS_FOLDER_RESUlTS + '/args.json', 'w') as f:
     json.dump(args.__dict__, f)
+
+# Params env. (they don't need to change via cmd line)
+PARAMS_ENV_LOP = {
+    'MASS_UPPER_BOUND': 2.0,
+    'MASS_LOWER_BOUND': 1.2,
+    'LENGTH_UPPER_BOUND': 1.5,
+    'LENGTH_LOWER_BOUND': 0.5,
+    'DAMPING_UPPER_BOUND': 1.0,
+    'DAMPING_LOWER_BOUND': 0.4,
+    'CHANGE_ENV_INTERVAL': 5,
+    'CHANGE_MASS': True,
+    'CHANGE_LENGTH': False,
+    'CHANGE_DAMPING': True
+}
+# Save the params env.
+with open(ABS_FOLDER_RESUlTS + '/params_env_lop.json', 'w') as f:
+    json.dump(PARAMS_ENV_LOP, f)
+# Print the params env.
+print(f"Params env: {PARAMS_ENV_LOP}")
 
 # Create the custom environment.
 env = gym.make('Pendulum-v1-custom')
@@ -127,7 +147,7 @@ def calc_advantages(rewards, values, gamma=0.99, lambda_=1):
 
 
 class PPO:
-    def __init__(self, clipping_on, advantage_on, gamma=0.99):
+    def __init__(self, gamma=0.99):
 
         env_input_size = env.observation_space.shape[0]
         env_action_size = env.action_space.shape[0]
@@ -151,11 +171,10 @@ class PPO:
         self.vf_coef = 1  # c1
         self.entropy_coef = 0.01  # c2
 
-        self.clipping_on = clipping_on
-        self.advantage_on = advantage_on
+        self.clipping_on = args.clipping_on
+        self.advantage_on = args.advantage_on
 
         self.std = torch.diag(torch.full(size=(1,), fill_value=0.5))
-
 
     def generate_trajectory(self, render=False):
 
@@ -209,19 +228,24 @@ class PPO:
         train_total_loss = []
         train_reward = []
 
+        time_to_change_env = 60/100 * num_iterations
+        time_to_change_env_list = [time_to_change_env]
         for idx_iteration in tqdm(range(num_iterations), desc="Training Progress"):
 
             if args.do_loss_of_plasticity:
-                time_to_change_env = 60/100 * num_iterations
                 # Verify when the reward is not changing dramatically. (for loss of plasticity Nature paper).
                 if idx_iteration >= time_to_change_env: # Assume that the reward is stable after 60% of the iterations.
-                    # Every 10 iterations, change the environment.
-                    if idx_iteration % 10 == 0:
+                    # Change the environment.
+                    if idx_iteration % PARAMS_ENV_LOP['CHANGE_ENV_INTERVAL'] == 0:
                         print(f"{WARNING_EMOJI} Changing the environment.")
-                        env.set_damping(b=np.random.uniform(0.0, 1.0))
-                        time_to_change_env = idx_iteration + 10
-                        # env.set_mass(m=0.5)
-                        # env.set_length(l=0.5)
+                        if PARAMS_ENV_LOP['CHANGE_DAMPING']:
+                            env.set_damping(b=np.random.uniform(PARAMS_ENV_LOP['DAMPING_LOWER_BOUND'], PARAMS_ENV_LOP['DAMPING_UPPER_BOUND']))
+                        if PARAMS_ENV_LOP['CHANGE_MASS']:
+                            env.set_mass(m=np.random.uniform(PARAMS_ENV_LOP['MASS_LOWER_BOUND'], PARAMS_ENV_LOP['MASS_UPPER_BOUND']))
+                        if PARAMS_ENV_LOP['CHANGE_LENGTH']:
+                            env.set_length(l=np.random.uniform(PARAMS_ENV_LOP['LENGTH_LOWER_BOUND'], PARAMS_ENV_LOP['LENGTH_UPPER_BOUND']))
+                        time_to_change_env = idx_iteration + PARAMS_ENV_LOP['CHANGE_ENV_INTERVAL']
+                        time_to_change_env_list.append(time_to_change_env)
 
             # Collect a number of trajectories and save the transitions in replay memory.
             for _ in range(num_trajectories):
@@ -306,7 +330,8 @@ class PPO:
             # Plot reward spanning all columns
             reward_ax.plot(range(len(train_reward)), train_reward, 'orange', label='Accumulated Reward')
             if args.do_loss_of_plasticity:
-                reward_ax.axvline(x=time_to_change_env, color='black', linestyle='--', label='Time to change environment')
+                for time_to_change_env in time_to_change_env_list:
+                    reward_ax.axvline(x=time_to_change_env, color='black', linestyle='--', label='Time to change environment', alpha=0.5)
             reward_ax.set_title('Accumulated Reward')
             reward_ax.set_xlabel('Iteration')
 
@@ -360,7 +385,7 @@ if __name__ == '__main__':
     for arg in vars(args):
         print(f"{arg}: {getattr(args, arg)}")
 
-    agent = PPO(clipping_on=args.clipping_on, advantage_on=args.advantage_on)
+    agent = PPO()
 
     if args.mode == 'train':
         agent.train()

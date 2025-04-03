@@ -1,4 +1,4 @@
-# from https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py
+# from https://github.com/openai/gymnasium/blob/master/gymnasium/envs/classic_control/pendulum.py
 __credits__ = ["Carlos Luis"]
 
 from typing import Optional
@@ -8,9 +8,9 @@ import numpy as np
 import pygame
 from pygame import gfxdraw
 
-import gym
-from gym import spaces
-from gym.utils import seeding
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.utils import seeding
 
 
 class CustomPendulumEnv(gym.Env):
@@ -87,8 +87,9 @@ class CustomPendulumEnv(gym.Env):
         self.max_torque = 2.0
         self.dt = 0.05
         self.g = g
-        self.m = 1.0
-        self.l = 1.0
+        self.set_mass(m=1)
+        self.set_length(l=1)
+        self.set_damping(b=0.1)
         self.screen = None
         self.clock = None
         self.isopen = True
@@ -98,11 +99,23 @@ class CustomPendulumEnv(gym.Env):
         high = np.array([1.0, 1.0, self.max_speed], dtype=np.float32)
         # This will throw a warning in tests/envs/test_envs in utils/env_checker.py as the space is not symmetric
         #   or normalised as max_torque == 2 by default. Ignoring the issue here as the default settings are too old
-        #   to update to follow the openai gym api
+        #   to update to follow the openai gymnasium api
         self.action_space = spaces.Box(
             low=-self.max_torque, high=self.max_torque, shape=(1,), dtype=np.float32
         )
         self.observation_space = spaces.Box(low=-high, high=high, dtype=np.float32)
+
+    def set_mass(self, m):
+        self.m = m
+        print("Set mass to ", m)
+
+    def set_length(self, l):
+        self.l = l
+        print("Set length to ", l)
+
+    def set_damping(self, b):
+        self.b = b
+        print("Set damping to ", b)
 
     def step(self, u):
         th, thdot = self.state  # th := theta
@@ -111,17 +124,22 @@ class CustomPendulumEnv(gym.Env):
         m = self.m
         l = self.l
         dt = self.dt
+        b = self.b # damping coefficient
 
         u = np.clip(u, -self.max_torque, self.max_torque)[0]
         self.last_u = u  # for rendering
         costs = angle_normalize(th) ** 2 + 0.1 * thdot ** 2 + 0.001 * (u ** 2)
-
-        newthdot = thdot + (3 * g / (2 * l) * np.sin(th) + 3.0 / (m * l ** 2) * u) * dt
+        newthdot = thdot + (3 * g / (2 * l) * np.sin(th) + 3.0 / (m * l ** 2) * u) * dt - b * thdot * dt
         newthdot = np.clip(newthdot, -self.max_speed, self.max_speed)
         newth = th + newthdot * dt
 
         self.state = np.array([newth, newthdot])
-        return self._get_obs(), -costs, False, {}
+
+        # Check for termination conditions
+        terminated = False  # The pendulum task is continuous, so it doesn't terminate naturally
+        truncated = False  # We'll let the environment run indefinitely
+
+        return self._get_obs(), -costs, terminated, truncated, {}
 
     def reset(
         self,
@@ -134,10 +152,7 @@ class CustomPendulumEnv(gym.Env):
         high = np.array([np.pi, 1])
         self.state = self.np_random.uniform(low=-high, high=high)
         self.last_u = None
-        if not return_info:
-            return self._get_obs()
-        else:
-            return self._get_obs(), {}
+        return self._get_obs(), {}
 
     def _get_obs(self):
         theta, thetadot = self.state

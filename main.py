@@ -11,8 +11,8 @@ from datetime import datetime
 import json
 from tqdm import tqdm
 
-import Modules
-from Modules import Net, ReplayMemory, PolicyNet
+import modules
+from modules import Net, ReplayMemory, PolicyNet
 from torch.distributions import MultivariateNormal
 
 # Folders.
@@ -55,7 +55,7 @@ parser.add_argument('--mode', type=str, choices=['train', 'test'], default='trai
                     help='Select mode: train or test')
 
 # Hyperparameters
-parser.add_argument('--num_timesteps', type=int, default=200,
+parser.add_argument('--num_timesteps_per_trajectory', type=int, default=200,
                     help='Number of timesteps per trajectory')
 parser.add_argument('--num_trajectories', type=int, default=10,
                     help='Number of trajectories to collect')
@@ -96,10 +96,11 @@ PARAMS_ENV_LOP = {
     'LENGTH_LOWER_BOUND': 0.5,
     'DAMPING_UPPER_BOUND': 1.0,
     'DAMPING_LOWER_BOUND': 0.4,
-    'CHANGE_ENV_INTERVAL': 5,
-    'CHANGE_MASS': True,
+    'CHANGE_ENV_INTERVAL': 20,
+    'CHANGE_MASS': False,
     'CHANGE_LENGTH': False,
-    'CHANGE_DAMPING': True
+    'CHANGE_DAMPING': True,
+    'TIME_TO_CHANGE_ENV': 20/100 * args.num_iterations
 }
 # Save the params env.
 with open(ABS_FOLDER_RESUlTS + '/params_env_lop.json', 'w') as f:
@@ -112,7 +113,7 @@ env = gym.make('Pendulum-v1-custom')
 env = env.unwrapped  # Get the unwrapped environment to access custom methods.
 
 # Hyperparameters.
-num_timesteps = args.num_timesteps
+num_timesteps_per_trajectory = args.num_timesteps_per_trajectory
 num_trajectories = args.num_trajectories
 num_iterations = args.num_iterations
 epochs = args.epochs
@@ -176,7 +177,7 @@ class PPO:
 
         self.std = torch.diag(torch.full(size=(1,), fill_value=0.5))
 
-    def generate_trajectory(self, render=False):
+    def generate_trajectory(self, render: bool = False):
 
         current_state, _ = env.reset()  # Gymnasium returns (state, info)
         states = []
@@ -185,8 +186,8 @@ class PPO:
         log_probs = []
 
         # Run the old policy in environment for num_timestep.
-        for t in range(num_timesteps):
-            
+        for t in range(num_timesteps_per_trajectory):
+
             mean = self.policy_net(torch.as_tensor(current_state))
 
             # Sample an action.
@@ -228,27 +229,29 @@ class PPO:
         train_total_loss = []
         train_reward = []
 
-        time_to_change_env = 60/100 * num_iterations
-        time_to_change_env_list = [time_to_change_env]
+        time_to_change_env_list = []
         for idx_iteration in tqdm(range(num_iterations), desc="Training Progress"):
 
-            if args.do_loss_of_plasticity:
-                # Verify when the reward is not changing dramatically. (for loss of plasticity Nature paper).
-                if idx_iteration >= time_to_change_env: # Assume that the reward is stable after 60% of the iterations.
-                    # Change the environment.
-                    if idx_iteration % PARAMS_ENV_LOP['CHANGE_ENV_INTERVAL'] == 0:
-                        print(f"{WARNING_EMOJI} Changing the environment.")
-                        if PARAMS_ENV_LOP['CHANGE_DAMPING']:
-                            env.set_damping(b=np.random.uniform(PARAMS_ENV_LOP['DAMPING_LOWER_BOUND'], PARAMS_ENV_LOP['DAMPING_UPPER_BOUND']))
-                        if PARAMS_ENV_LOP['CHANGE_MASS']:
-                            env.set_mass(m=np.random.uniform(PARAMS_ENV_LOP['MASS_LOWER_BOUND'], PARAMS_ENV_LOP['MASS_UPPER_BOUND']))
-                        if PARAMS_ENV_LOP['CHANGE_LENGTH']:
-                            env.set_length(l=np.random.uniform(PARAMS_ENV_LOP['LENGTH_LOWER_BOUND'], PARAMS_ENV_LOP['LENGTH_UPPER_BOUND']))
-                        time_to_change_env = idx_iteration + PARAMS_ENV_LOP['CHANGE_ENV_INTERVAL']
-                        time_to_change_env_list.append(time_to_change_env)
-
             # Collect a number of trajectories and save the transitions in replay memory.
-            for _ in range(num_trajectories):
+            # Some trajectories will have an altered environment.
+            for idx_trajectory in range(num_trajectories):
+
+                # Change the environment.
+                if args.do_loss_of_plasticity:
+                    if idx_trajectory > np.floor(num_trajectories / 2):
+                        if idx_iteration >= PARAMS_ENV_LOP['TIME_TO_CHANGE_ENV']: # Assume that the reward is stable after 60% of the iterations.
+                            # Change the environment.
+                            if idx_iteration % PARAMS_ENV_LOP['CHANGE_ENV_INTERVAL'] == 0:
+                                print(f"{WARNING_EMOJI} Changing the environment.")
+                                if PARAMS_ENV_LOP['CHANGE_DAMPING']:
+                                    env.set_damping(b=np.random.uniform(PARAMS_ENV_LOP['DAMPING_LOWER_BOUND'], PARAMS_ENV_LOP['DAMPING_UPPER_BOUND']))
+                                if PARAMS_ENV_LOP['CHANGE_MASS']:
+                                    env.set_mass(m=np.random.uniform(PARAMS_ENV_LOP['MASS_LOWER_BOUND'], PARAMS_ENV_LOP['MASS_UPPER_BOUND']))
+                                if PARAMS_ENV_LOP['CHANGE_LENGTH']:
+                                    env.set_length(l=np.random.uniform(PARAMS_ENV_LOP['LENGTH_LOWER_BOUND'], PARAMS_ENV_LOP['LENGTH_UPPER_BOUND']))
+                                PARAMS_ENV_LOP['TIME_TO_CHANGE_ENV'] = idx_iteration + PARAMS_ENV_LOP['CHANGE_ENV_INTERVAL']
+                                time_to_change_env_list.append(PARAMS_ENV_LOP['TIME_TO_CHANGE_ENV'])
+
                 self.generate_trajectory()
 
             # Sample from replay memory.
@@ -331,7 +334,9 @@ class PPO:
             reward_ax.plot(range(len(train_reward)), train_reward, 'orange', label='Accumulated Reward')
             if args.do_loss_of_plasticity:
                 for time_to_change_env in time_to_change_env_list:
-                    reward_ax.axvline(x=time_to_change_env, color='black', linestyle='--', label='Time to change environment', alpha=0.5)
+                    reward_ax.axvline(x=time_to_change_env, color='black', linestyle='--', label='Time to change environment', alpha=0.1)
+            # Horizontal line at y=0.
+            reward_ax.axhline(y=0, color='green', linestyle='-', label='Zero Reward')
             reward_ax.set_title('Accumulated Reward')
             reward_ax.set_xlabel('Iteration')
 

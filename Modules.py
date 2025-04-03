@@ -17,7 +17,21 @@ class Net(nn.Module):
                 out = self.layer3(x)
 
                 return out
-	    
+
+class PolicyNet(nn.Module):
+        def __init__(self, input_size, output_size, hidden_size=64, activation=nn.functional.relu):
+                super(PolicyNet, self).__init__()
+                self.layer1 = nn.utils.spectral_norm(nn.Linear(input_size, hidden_size))
+                self.layer2 = nn.utils.spectral_norm(nn.Linear(hidden_size, hidden_size))
+                self.layer3 = nn.utils.spectral_norm(nn.Linear(hidden_size, output_size))
+                self.act = activation
+
+        def forward(self, x):
+                x = self.act(self.layer1(x))
+                x = self.act(self.layer2(x))
+                out = self.layer3(x)
+
+                return out
 
 class ReplayMemory():
     def __init__(self, batch_size=10000):

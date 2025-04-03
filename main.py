@@ -15,6 +15,10 @@ import modules
 from modules import Net, ReplayMemory, PolicyNet
 from torch.distributions import MultivariateNormal
 
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
 # Folders.
 RESULTS = 'results'
 if not os.path.exists(RESULTS):
@@ -154,11 +158,11 @@ class PPO:
         env_action_size = env.action_space.shape[0]
 
         if args.use_spectral_norm:
-            self.policy_net = PolicyNet(env_input_size, env_action_size)
+            self.policy_net = PolicyNet(env_input_size, env_action_size).to(device)
         else:
-            self.policy_net = Net(env_input_size, env_action_size)
+            self.policy_net = Net(env_input_size, env_action_size).to(device)
 
-        self.critic_net = Net(env_input_size, 1)
+        self.critic_net = Net(env_input_size, 1).to(device)
 
         self.optimizer = torch.optim.Adam([  # Update both models together
             {'params': self.policy_net.parameters(), 'lr': learning_rate},
@@ -175,7 +179,7 @@ class PPO:
         self.clipping_on = args.clipping_on
         self.advantage_on = args.advantage_on
 
-        self.std = torch.diag(torch.full(size=(1,), fill_value=0.5))
+        self.std = torch.diag(torch.full(size=(1,), fill_value=0.5)).to(device)
 
     def generate_trajectory(self, render: bool = False):
 
@@ -188,7 +192,7 @@ class PPO:
         # Run the old policy in environment for num_timestep.
         for t in range(num_timesteps_per_trajectory):
 
-            mean = self.policy_net(torch.as_tensor(current_state))
+            mean = self.policy_net(torch.as_tensor(current_state).to(device))
 
             # Sample an action.
             normal = MultivariateNormal(mean, self.std)
@@ -196,13 +200,13 @@ class PPO:
             log_prob = normal.log_prob(action).detach()
 
             # Emulate taking that action.
-            next_state, reward, _, _, _ = env.step(action)  # Gymnasium returns (state, reward, terminated, truncated, info)
+            next_state, reward, _, _, _ = env.step(action.cpu().numpy())  # Gymnasium returns (state, reward, terminated, truncated, info)
 
             # Store results in a list.
             states.append(current_state)
-            actions.append(action)
+            actions.append(action.cpu())
             rewards.append(reward)
-            log_probs.append(log_prob)
+            log_probs.append(log_prob.cpu())
 
             if render:
                 env.render()
@@ -210,13 +214,13 @@ class PPO:
             current_state = next_state.copy()
 
         # Calculate reward to go.
-        rtg = calc_reward_togo(torch.as_tensor(rewards), self.gamma)
+        rtg = calc_reward_togo(torch.as_tensor(rewards), self.gamma).to(device)
 
         # Calculate values.
-        values = self.critic_net(torch.as_tensor(states)).squeeze()
+        values = self.critic_net(torch.as_tensor(states).to(device)).squeeze()
 
         # Calculate advantages.
-        advantages = calc_advantages(rewards, values.detach(), self.gamma, self.lambda_)
+        advantages = calc_advantages(rewards, values.detach().cpu(), self.gamma, self.lambda_).to(device)
 
         # Save the transitions in replay memory.
         for t in range(len(rtg)):
@@ -322,16 +326,16 @@ class PPO:
             for i in range(3):
                 axes.append(plt.subplot2grid((2, 3), (0, i)))
             reward_ax = plt.subplot2grid((2, 3), (1, 0), colspan=3)
-            axes[0].plot(range(len(train_actor_loss)), train_actor_loss, 'r', label='Actor Loss')
+            axes[0].plot(range(len(train_actor_loss)), [loss.cpu().item() if torch.is_tensor(loss) else loss for loss in train_actor_loss], 'r', label='Actor Loss')
             axes[0].set_title('Actor Loss')
-            axes[1].plot(range(len(train_critic_loss)), train_critic_loss, 'b', label='Critic Loss')
+            axes[1].plot(range(len(train_critic_loss)), [loss.cpu().item() if torch.is_tensor(loss) else loss for loss in train_critic_loss], 'b', label='Critic Loss')
             axes[1].set_title('Critic Loss')
-            axes[2].plot(range(len(train_total_loss)), train_total_loss, 'm', label='Total Loss')
+            axes[2].plot(range(len(train_total_loss)), [loss.cpu().item() if torch.is_tensor(loss) else loss for loss in train_total_loss], 'm', label='Total Loss')
             axes[2].set_title('Total Loss')
             for i in range(3):
                 axes[i].set_xlabel('Iteration')
             # Plot reward spanning all columns
-            reward_ax.plot(range(len(train_reward)), train_reward, 'orange', label='Accumulated Reward')
+            reward_ax.plot(range(len(train_reward)), [reward.cpu().item() if torch.is_tensor(reward) else reward for reward in train_reward], 'orange', label='Accumulated Reward')
             if args.do_loss_of_plasticity:
                 for time_to_change_env in time_to_change_env_list:
                     reward_ax.axvline(x=time_to_change_env, color='black', linestyle='--', label='Time to change environment', alpha=0.1)
@@ -355,10 +359,10 @@ class PPO:
         for i, t in enumerate(theta):
             for j, td in enumerate(theta_dot):
                 state = (torch.cos(t), torch.sin(t), td)
-                values[i, j] = self.critic_net(torch.as_tensor(state))
+                values[i, j] = self.critic_net(torch.as_tensor(state).to(device))
 
         fig = plt.figure()
-        plt.imshow(values.detach().numpy(), extent=[theta[0], theta[-1], theta_dot[0], theta_dot[-1]] ,aspect=0.4)
+        plt.imshow(values.cpu().detach().numpy(), extent=[theta[0], theta[-1], theta_dot[0], theta_dot[-1]] ,aspect=0.4)
         plt.title('Value grid')
         plt.xlabel('angle')
         plt.ylabel('angular velocity')

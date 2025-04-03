@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 import collections
 
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 class Net(nn.Module):
         def __init__(self, input_size, output_size, hidden_size=64, activation=nn.functional.relu):
                 super(Net, self).__init__()
@@ -59,13 +62,13 @@ class ReplayMemory():
         indices = torch.randperm(num_states)
         batches = [indices[i:i+self.batch_size] for i in batch_start]
 
-        return (torch.tensor(self.states), 
-                torch.tensor(self.actions), 
-                torch.tensor(self.rewards),
-                torch.tensor(self.rewards_togo),
-                torch.tensor(self.advantages),
-                torch.tensor(self.values),
-                torch.tensor(self.log_probs), 
+        return (torch.tensor(self.states).to(device),
+                torch.tensor(self.actions).to(device),
+                torch.tensor(self.rewards).to(device),
+                torch.tensor(self.rewards_togo).to(device),
+                torch.tensor(self.advantages).to(device),
+                torch.tensor(self.values).to(device),
+                torch.tensor(self.log_probs).to(device),
                 batches)
     
     def clear(self):

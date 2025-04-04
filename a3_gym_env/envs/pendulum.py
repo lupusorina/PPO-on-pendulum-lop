@@ -117,6 +117,9 @@ class CustomPendulumEnv(gym.Env):
         self.b = b
         print("Set damping to ", b)
 
+    def get_costs(self):
+        return angle_normalize(self.state[0]) ** 2 + 0.1 * (self.state[1] ** 2) + 0.001 * (self.last_u ** 2)
+
     def step(self, u):
         th, thdot = self.state  # th := theta
 
@@ -128,7 +131,7 @@ class CustomPendulumEnv(gym.Env):
 
         u = np.clip(u, -self.max_torque, self.max_torque)[0]
         self.last_u = u  # for rendering
-        costs = angle_normalize(th) ** 2 + 0.1 * thdot ** 2 + 0.001 * (u ** 2)
+        costs = self.get_costs()
         newthdot = thdot + (3 * g / (2 * l) * np.sin(th) + 3.0 / (m * l ** 2) * u) * dt - b * thdot * dt
         newthdot = np.clip(newthdot, -self.max_speed, self.max_speed)
         newth = th + newthdot * dt

@@ -325,6 +325,7 @@ class PPO:
 
             # Save the networks.
             torch.save(self.policy_net.state_dict(), ABS_FOLDER_RESUlTS + POLICY_FOLDER + f'/policy_net' + str(idx_iteration) + '.pt')
+            torch.save(self.policy_net.state_dict(), ABS_FOLDER_RESUlTS + POLICY_FOLDER + f'/policy_net.pt')
             torch.save(self.critic_net.state_dict(), ABS_FOLDER_RESUlTS + CRITIC_FOLDER + f'/critic_net' + str(idx_iteration) + '.pt')
 
             # Plot the performance.
@@ -377,7 +378,7 @@ class PPO:
         plt.close(fig)
 
     def test(self):
-        self.policy_net.load_state_dict(torch.load(ABS_FOLDER_RESUlTS + f'/policy_net.pt', weights_only=True))
+        self.policy_net.load_state_dict(torch.load(ABS_FOLDER_RESUlTS + POLICY_FOLDER + f'/policy_net.pt', weights_only=True))
         current_state, _ = env.reset()  # Gymnasium returns (state, info)
         reward_list = []
         print("Testing the policy...")

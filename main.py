@@ -42,8 +42,8 @@ matplotlib.rc('font', **font)
 matplotlib.rcParams["figure.figsize"] = [3*3.54, 1.5*3.54]
 
 # Set the seed.
-torch.manual_seed(0)
-np.random.seed(0)
+torch.manual_seed(42)
+np.random.seed(42)
 
 # Set up logging.
 logging.basicConfig(level=logging.INFO)
@@ -94,23 +94,29 @@ with open(ABS_FOLDER_RESUlTS + '/args.json', 'w') as f:
 
 # Params env. (they don't need to change via cmd line)
 PARAMS_ENV_LOP = {
-    'MASS_UPPER_BOUND': 2.0,
+    'MASS_UPPER_BOUND': 1.5, # Mass
     'MASS_LOWER_BOUND': 1.2,
-    'LENGTH_UPPER_BOUND': 1.5,
+    'CHANGE_MASS': True,
+    'LENGTH_UPPER_BOUND': 1.5, # Length
     'LENGTH_LOWER_BOUND': 0.5,
-    'DAMPING_UPPER_BOUND': 1.0,
-    'DAMPING_LOWER_BOUND': 0.4,
-    'CHANGE_ENV_INTERVAL': 20,
-    'CHANGE_MASS': False,
     'CHANGE_LENGTH': False,
+    'DAMPING_UPPER_BOUND': 1.0, # Damping
+    'DAMPING_LOWER_BOUND': 0.4,
     'CHANGE_DAMPING': True,
-    'TIME_TO_CHANGE_ENV': 20/100 * args.num_iterations
+    'TIME_TO_CHANGE_ENV': 40/100 * args.num_iterations,
+    'CHANGE_ENV_INTERVAL': 20,
 }
 # Save the params env.
 with open(ABS_FOLDER_RESUlTS + '/params_env_lop.json', 'w') as f:
     json.dump(PARAMS_ENV_LOP, f)
 # Print the params env.
 print(f"Params env: {PARAMS_ENV_LOP}")
+POLICY_FOLDER = '/policy_net'
+CRITIC_FOLDER = '/critic_net'
+if not os.path.exists(ABS_FOLDER_RESUlTS + POLICY_FOLDER):
+    os.makedirs(ABS_FOLDER_RESUlTS + POLICY_FOLDER)
+if not os.path.exists(ABS_FOLDER_RESUlTS + CRITIC_FOLDER):
+    os.makedirs(ABS_FOLDER_RESUlTS + CRITIC_FOLDER)
 
 # Create the custom environment.
 env = gym.make('Pendulum-v1-custom')
@@ -160,7 +166,8 @@ class PPO:
         if args.use_spectral_norm:
             self.policy_net = PolicyNet(env_input_size, env_action_size).to(device)
         else:
-            self.policy_net = Net(env_input_size, env_action_size).to(device)
+            self.policy_net = Net(env_input_size, env_action_size, hidden_size=7).to(device)
+            print(f"Number of parameters in policy net: {sum(p.numel() for p in self.policy_net.parameters())}")
 
         self.critic_net = Net(env_input_size, 1).to(device)
 
@@ -317,8 +324,8 @@ class PPO:
             tqdm.write(f'Actor loss = {avg_actor_loss:.4f} | Critic loss = {avg_critic_loss:.4f} | Total Loss = {avg_total_loss:.4f} | Reward = {avg_reward:.4f}')
 
             # Save the networks.
-            torch.save(self.policy_net.state_dict(), ABS_FOLDER_RESUlTS + f'/policy_net.pt')
-            torch.save(self.critic_net.state_dict(), ABS_FOLDER_RESUlTS + f'/critic_net.pt')
+            torch.save(self.policy_net.state_dict(), ABS_FOLDER_RESUlTS + POLICY_FOLDER + f'/policy_net' + str(idx_iteration) + '.pt')
+            torch.save(self.critic_net.state_dict(), ABS_FOLDER_RESUlTS + CRITIC_FOLDER + f'/critic_net' + str(idx_iteration) + '.pt')
 
             # Plot the performance.
             fig = plt.figure()

@@ -6,6 +6,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import os
 from datetime import datetime
+import pandas as pd
 
 RESULTS = 'results'
 if not os.path.exists(RESULTS):
@@ -63,7 +64,6 @@ def train(seed=1, hidden_sizes=[1, 1]):
     model.model[0].weight.data = torch.randn(model.model[0].weight.data.size()) * 0.01
     model.model[0].bias.data = torch.randn(model.model[0].bias.data.size()) * 0.01
 
-
     # Define loss function and optimizer
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -75,32 +75,30 @@ def train(seed=1, hidden_sizes=[1, 1]):
     for epoch in range(n_epochs):
         weights.append(model.model[0].weight.detach().numpy().flatten())
         biases.append(model.model[0].bias.detach().numpy().flatten())
-        # Forward pass
+
         outputs = model(x_tensor)
         loss = criterion(outputs, y_tensor)
-        
-        # Backward pass and optimize
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        
+
         # # Print progress every 100 epochs
         # if (epoch + 1) % 100 == 0:
         #     print(f"Epoch [{epoch+1}/{n_epochs}], Loss: {loss.item():.4f}")
-    
-    
-    # Evaluate the model
+
+    # Evaluate the model.
     model.eval()
     with torch.no_grad():
         y_pred = model(x_tensor).numpy()
         
     return x, y, y_pred, weights, biases
-    
-   
+
 
 if __name__ == "__main__":
     MAX_SEED = 20
     MAX_HIDDEN_SIZE = 20
+    NB_HIDDEN_LAYERS = 4
 
     list_of_seeds = np.arange(1, MAX_SEED)
     hidden_sizes = np.arange(1, MAX_HIDDEN_SIZE)
@@ -113,9 +111,11 @@ if __name__ == "__main__":
         plt.figure(figsize=(10, 6))
         x, y = generate_data()
         plt.scatter(x, y, alpha=0.1, label='Data points')
+        hidden_size_list = [hidden_size for _ in range(NB_HIDDEN_LAYERS)]
+        print(hidden_size_list)
 
         for seed in list_of_seeds:
-            x, _, y_pred, weights, bias = train(seed, hidden_sizes=[hidden_size])  
+            x, _, y_pred, weights, bias = train(seed, hidden_sizes=hidden_size_list)  
             # check how many of them have a long window of close to 0 values.
             window_max = 0
             for i, y in enumerate(y_pred):
@@ -157,6 +157,9 @@ if __name__ == "__main__":
         print(f"Number of bad fits: {counter_bad_fit} for hidden size {hidden_size}")
         counter_bad_fit_list.append(counter_bad_fit)
         
+    df = pd.DataFrame({'hidden_size': hidden_sizes, 'bad_fit': counter_bad_fit_list})
+    df.to_csv(ABS_FOLDER_RESUlTS + '/bad_fit_' + str(NB_HIDDEN_LAYERS) + '.csv', index=False)
+        
     # plot counter bad fit
     plt.figure(figsize=(10, 6))
     plt.plot(hidden_sizes, counter_bad_fit_list, '-o')
@@ -164,5 +167,5 @@ if __name__ == "__main__":
     plt.ylabel('Number of bad fits')
     plt.title('Number of bad fits vs Hidden size')
     plt.grid(True)
-    plt.savefig(ABS_FOLDER_RESUlTS + '/bad_fit.png')
+    plt.savefig(ABS_FOLDER_RESUlTS + '/bad_fit_nb_hidden_layers_' + str(NB_HIDDEN_LAYERS) + '.png')
 

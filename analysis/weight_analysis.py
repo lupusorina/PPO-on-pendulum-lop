@@ -31,5 +31,12 @@ for policy in tqdm(policies, desc="Loading policies"):
 fig, axs = plt.subplots(2, 1)
 axs[0].plot(weights)
 axs[1].plot(biases)
+axs[0].set_title("Weights")
+axs[1].set_title("Biases")
+axs[0].set_ylabel("Weight value")
+axs[1].set_ylabel("Bias value")
+axs[1].set_xlabel("PPO Iteration")
+axs[0].set_xlabel("PPO Iteration")
+axs[0].grid()
 plt.show()
 
